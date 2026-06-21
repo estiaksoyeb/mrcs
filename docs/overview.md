@@ -43,3 +43,23 @@ graph TD
 - `mrcs list`: Tabulates all tracked files in the current folder along with their current revision and status.
 - `mrcs delete <rev> [file]`: Permanently removes a revision from the archive history.
 - `mrcs help`: Renders a clean colorized help screen.
+
+---
+
+## RCS Feature Coverage (Stage 1 Wrapper)
+
+`mrcs` does not wrap every utility or legacy feature in the GNU RCS suite. Instead, it carefully selects and simplifies the core workflow of RCS to match modern developer standards.
+
+### Wrapped Features
+- **Initialization**: `mrcs init` wraps `rcs -i` (initialize) and `rcs -U` (disable strict locking).
+- **Check-in**: `mrcs commit` wraps `ci -u` (check in and keep checked out unlocked/writable).
+- **Check-out**: `mrcs restore` wraps `co -f -u -r` (forced checkout unlocked).
+- **History Log**: `mrcs log` wraps `rlog` (parsed and prettified).
+- **Differences**: `mrcs diff` wraps `rcsdiff -u` (unified format, colorized).
+- **History Pruning**: `mrcs delete` wraps `rcs -o` (outdates/deletes a revision).
+
+### Intentionally Excluded Features
+- **Strict File Locking**: RCS defaults to strict lock-on-checkout (`rcs -L`), preventing other users/editors from editing a file unless locked. `mrcs` disables this by default (`rcs -U`) to align with Git's unlock-based workflow.
+- **Access Control Lists**: Legacy RCS permissions commands (`rcs -a` to append user logins, `rcs -e` to erase them) are skipped to simplify multi-user management.
+- **Merging & Keyword Cleaning**: Utilities like `rcsmerge` (merging edits from different revisions) and `rcsclean` (deleting unmodified checked-out files) are omitted.
+- **Keyword Identification**: The `ident` tool (extracting keywords like `$Id$`) is skipped to prevent file pollution.
