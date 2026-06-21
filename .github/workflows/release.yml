@@ -33,7 +33,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Install cross-compiler (Ubuntu ARM64)
         if: matrix.install_cc
@@ -44,7 +44,7 @@ jobs:
           ${{ matrix.cc }} -Wall -Wextra -O2 -std=c99 -D_GNU_SOURCE ${{ matrix.flags }} -o mrcs-${{ matrix.target }} mrcs.c
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: mrcs-${{ matrix.target }}
           path: mrcs-${{ matrix.target }}
@@ -55,10 +55,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Download all artifacts
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           path: artifacts
 
