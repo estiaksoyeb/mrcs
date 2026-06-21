@@ -39,6 +39,7 @@ graph TD
 - `mrcs diff [args]`: Prints a colorized unified diff.
 - `mrcs restore <rev> [file]`: Restores the working copy to an older revision (unlocked/writable).
 - `mrcs status [file]`: Reports working copy state (`clean`, `modified`, `uncommitted`, `untracked`).
+- `mrcs show [file]`: Shows the diff introduced by the most recent commit (comparing previous revision to HEAD).
 - `mrcs current [file]`: Outputs current HEAD revision.
 - `mrcs list`: Tabulates all tracked files in the current folder along with their current revision and status.
 - `mrcs delete <rev> [file]`: Permanently removes a revision from the archive history.
@@ -56,6 +57,7 @@ graph TD
 - **Check-out**: `mrcs restore` wraps `co -f -u -r` (forced checkout unlocked).
 - **History Log**: `mrcs log` wraps `rlog` (parsed and prettified).
 - **Differences**: `mrcs diff` wraps `rcsdiff -u` (unified format, colorized).
+- **Show Commit**: `mrcs show` wraps `rcsdiff -u -r<rev1> -r<rev2>` (compares previous revision to HEAD).
 - **History Pruning**: `mrcs delete` wraps `rcs -o` (outdates/deletes a revision).
 
 ### Intentionally Excluded Features

@@ -53,6 +53,14 @@ if [ "$current_rev" != "1.1" ]; then
     exit 1
 fi
 
+# 5b. Test mrcs show after initial commit (only one revision exists)
+echo "Testing show after initial commit..."
+show_out=$($MRCS show test_file.txt)
+if [[ ! "$show_out" =~ "Only one revision (1.1) exists for test_file.txt. Nothing to show." ]]; then
+    echo "FAILED: Expected 'Only one revision' message, got '$show_out'"
+    exit 1
+fi
+
 # 6. Test file modification and status check
 echo "Testing modification status..."
 echo "Adding new line of text" > test_file.txt
@@ -83,6 +91,18 @@ fi
 current_rev=$($MRCS current)
 if [ "$current_rev" != "1.2" ]; then
     echo "FAILED: Expected current revision '1.2', got '$current_rev'"
+    exit 1
+fi
+
+# 9b. Test mrcs show after second commit
+echo "Testing show after second commit..."
+show_out=$($MRCS show)
+if [[ ! "$show_out" =~ "Showing changes from 1.1 to 1.2 (last commit):" ]]; then
+    echo "FAILED: Expected show header, got '$show_out'"
+    exit 1
+fi
+if [[ ! "$show_out" =~ "+Adding new line of text" ]]; then
+    echo "FAILED: Expected diff in show output, got '$show_out'"
     exit 1
 fi
 

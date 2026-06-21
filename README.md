@@ -83,11 +83,17 @@ mrcs log
 ```
 
 ### `mrcs diff [args]`
-Compare revisions or the working copy:
+Compare revisions or the working copy. Supports both positional and explicit `-r` formats:
 - `mrcs diff`: Compares working file to the latest revision.
-- `mrcs diff 1.1`: Compares working file to revision 1.1.
-- `mrcs diff 1.1 1.2`: Compares revision 1.1 with 1.2.
-- `mrcs diff 1.1 TODO.md`: Compares revision 1.1 of `TODO.md`.
+- `mrcs diff 1.1` (or `mrcs diff -r 1.1`): Compares working file to revision 1.1.
+- `mrcs diff 1.1 1.2` (or `mrcs diff -r 1.1 -r 1.2`): Compares revision 1.1 with 1.2.
+- `mrcs diff 1.1 TODO.md` (or `mrcs diff -r 1.1 TODO.md`): Compares revision 1.1 of `TODO.md`.
+
+### `mrcs show [file]`
+Show the diff introduced by the most recent commit (comparing the revision immediately before HEAD to HEAD).
+```bash
+mrcs show TODO.md
+```
 
 ### `mrcs status [file]`
 Check the status of tracked files. If no file is specified, it displays a summary of status and current revisions for all tracked files in the directory.

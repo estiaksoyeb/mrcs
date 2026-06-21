@@ -1157,6 +1157,51 @@ int cmd_delete(const char *file_path, const char *revision, int force) {
     return 0;
 }
 
+/* Command: show */
+int cmd_show(const char *file_path) {
+    if (!is_tracked(file_path)) {
+        fprintf(stderr, "%sError: File '%s' is not tracked.%s\n", ANSI_RED, file_path, ANSI_RESET);
+        return 1;
+    }
+    if (!has_revisions(file_path)) {
+        printf("No revisions found for %s.\n", file_path);
+        return 0;
+    }
+    
+    char *current = get_current_rev(file_path);
+    if (!current) {
+        printf("No revisions found for %s.\n", file_path);
+        return 0;
+    }
+    
+    int major = 0, minor = 0;
+    if (sscanf(current, "%d.%d", &major, &minor) != 2) {
+        fprintf(stderr, "%sError: Failed to parse HEAD revision '%s'%s\n", ANSI_RED, current, ANSI_RESET);
+        free(current);
+        return 1;
+    }
+    
+    if (minor == 1) {
+        printf("Only one revision (%s) exists for %s. Nothing to show.\n", current, file_path);
+        free(current);
+        return 0;
+    }
+    
+    char prev_rev[64];
+    snprintf(prev_rev, sizeof(prev_rev), "%d.%d", major, minor - 1);
+    
+    int tty = isatty(STDOUT_FILENO);
+    if (tty) {
+        printf("%sShowing changes from %s to %s (last commit):%s\n", ANSI_BOLD, prev_rev, current, ANSI_RESET);
+    } else {
+        printf("Showing changes from %s to %s (last commit):\n", prev_rev, current);
+    }
+    
+    int code = cmd_diff(file_path, prev_rev, current);
+    free(current);
+    return code;
+}
+
 /* Command: help */
 void cmd_help() {
     int tty = isatty(STDOUT_FILENO);
@@ -1195,6 +1240,7 @@ void cmd_help() {
         printf("    -r <rev>                Compare against revision <rev>.\n");
         printf("    -r <rev1> -r <rev2>     Compare <rev1> against <rev2>.\n");
         printf("  restore <rev> [file]     Restore file to an older revision.\n");
+        printf("  show [file]              Show the diff introduced by the last commit.\n");
         printf("  status [file]            Show status of tracked file(s).\n");
         printf("  current [file]           Display current revision of a file.\n");
         printf("  list                     List all tracked files in the current directory.\n");
@@ -1342,6 +1388,14 @@ int main(int argc, char *argv[]) {
         
         int code = cmd_diff(resolved_file, rev1, rev2);
         free(resolved_file);
+        return code;
+    }
+    
+    if (strcmp(command, "show") == 0) {
+        const char *file_arg = (argc >= 3) ? argv[2] : NULL;
+        char *resolved = resolve_file(file_arg);
+        int code = cmd_show(resolved);
+        free(resolved);
         return code;
     }
     
