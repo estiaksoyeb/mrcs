@@ -1218,6 +1218,7 @@ void cmd_help() {
         printf("    -r <rev>                Compare against revision <rev>.\n");
         printf("    -r <rev1> -r <rev2>     Compare <rev1> against <rev2>.\n");
         printf("  %srestore <rev> [file]%s     Restore file to an older revision.\n", ANSI_GREEN, ANSI_RESET);
+        printf("  %sshow [file]%s              Show the diff introduced by the last commit.\n", ANSI_GREEN, ANSI_RESET);
         printf("  %sstatus [file]%s            Show status of tracked file(s).\n", ANSI_GREEN, ANSI_RESET);
         printf("  %scurrent [file]%s           Display current revision of a file.\n", ANSI_GREEN, ANSI_RESET);
         printf("  %slist%s                     List all tracked files in the current directory.\n", ANSI_GREEN, ANSI_RESET);
