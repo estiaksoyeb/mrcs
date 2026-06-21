@@ -44,7 +44,15 @@ apt install rcs
 
 ### Installation
 
-Clone this repository and compile the binary:
+#### Option 1: Quick Install (Recommended)
+You can install `mrcs` with a single command:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/estiaksoyeb/mrcs/main/install.sh | bash
+```
+
+#### Option 2: Build from Source
+Alternatively, clone this repository and compile the binary:
 
 ```bash
 make
