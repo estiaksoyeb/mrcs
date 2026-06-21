@@ -1,0 +1,21 @@
+# Object files and libraries
+*.o
+*.a
+*.so
+*.dylib
+
+# Executables
+mrcs
+*.out
+
+# RCS temporary files
+*,
+,*
+RCS/
+
+# Debug and IDE files
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store

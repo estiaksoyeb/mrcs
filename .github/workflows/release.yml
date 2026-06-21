@@ -1,0 +1,76 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build Binaries
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: linux-amd64
+            cc: gcc
+          - os: ubuntu-latest
+            target: linux-arm64
+            cc: aarch64-linux-gnu-gcc
+            install_cc: sudo apt-get update && sudo apt-get install -y gcc-aarch64-linux-gnu
+          - os: macos-latest
+            target: darwin-amd64
+            cc: clang
+            flags: -target x86_64-apple-macos
+          - os: macos-latest
+            target: darwin-arm64
+            cc: clang
+            flags: -target arm64-apple-macos
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Install cross-compiler (Ubuntu ARM64)
+        if: matrix.install_cc
+        run: ${{ matrix.install_cc }}
+
+      - name: Build binary
+        run: |
+          ${{ matrix.cc }} -Wall -Wextra -O2 -std=c99 -D_GNU_SOURCE ${{ matrix.flags }} -o mrcs-${{ matrix.target }} mrcs.c
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: mrcs-${{ matrix.target }}
+          path: mrcs-${{ matrix.target }}
+
+  release:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v3
+        with:
+          path: artifacts
+
+      - name: Flatten folder structure
+        run: |
+          mkdir -p release-assets
+          find artifacts -type f -exec cp {} release-assets/ \;
+          ls -la release-assets
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: release-assets/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
