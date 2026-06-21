@@ -79,7 +79,38 @@ else
     mv "$TEMP_FILE" "${INSTALL_DIR}/mrcs"
 fi
 
-# 6. Verify RCS dependency is installed
+# 6. Install Bash Autocompletion
+COMPLETION_DIR=""
+if [ -n "$PREFIX" ] && [ -d "$PREFIX/share/bash-completion/completions" ]; then
+    COMPLETION_DIR="$PREFIX/share/bash-completion/completions"
+elif [ -d "/usr/share/bash-completion/completions" ] && [ -w "/usr/share/bash-completion/completions" ]; then
+    COMPLETION_DIR="/usr/share/bash-completion/completions"
+elif [ -d "/etc/bash_completion.d" ] && [ -w "/etc/bash_completion.d" ]; then
+    COMPLETION_DIR="/etc/bash_completion.d"
+fi
+
+if [ -n "$COMPLETION_DIR" ]; then
+    echo "Installing Bash autocompletion..."
+    COMP_URL="https://raw.githubusercontent.com/${REPO}/main/mrcs.bash"
+    TEMP_COMP=$(mktemp)
+    if command -v curl >/dev/null 2>&1; then
+        curl -fsSL -o "$TEMP_COMP" "$COMP_URL" || true
+    elif command -v wget >/dev/null 2>&1; then
+        wget -qO "$TEMP_COMP" "$COMP_URL" || true
+    fi
+    if [ -s "$TEMP_COMP" ]; then
+        if [ "$USE_SUDO" = true ]; then
+            sudo mv "$TEMP_COMP" "${COMPLETION_DIR}/mrcs"
+        else
+            mv "$TEMP_COMP" "${COMPLETION_DIR}/mrcs"
+        fi
+        echo "Bash autocompletion installed in ${COMPLETION_DIR}/mrcs."
+    else
+        rm -f "$TEMP_COMP"
+    fi
+fi
+
+# 7. Verify RCS dependency is installed
 if ! command -v rcs >/dev/null 2>&1; then
     echo ""
     echo "==============================================="
