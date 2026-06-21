@@ -667,6 +667,12 @@ int cmd_commit(const char *file_path, const char *message_arg) {
         return 1;
     }
     
+    struct stat st_file;
+    if (stat(file_path, &st_file) != 0) {
+        fprintf(stderr, "%sError: Working copy file '%s' does not exist.%s\n", ANSI_RED, file_path, ANSI_RESET);
+        return 1;
+    }
+    
     /* Prevent commits with no changes if revisions already exist */
     if (has_revisions(file_path)) {
         const char *argv_diff[] = {"rcsdiff", file_path, NULL};
