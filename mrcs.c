@@ -30,10 +30,71 @@ typedef struct {
     int count;
 } LineList;
 
+LineList split_lines(const char *buf);
+
 typedef struct {
     char **names;
     int count;
 } TrackedFiles;
+
+static void add_file(TrackedFiles *tf, const char *name) {
+    size_t len = strlen(name);
+    if (len <= 2 || strcmp(name + len - 2, ",v") != 0) return;
+    
+    char *base = strndup(name, len - 2);
+    
+    /* Check for duplicates */
+    for (int i = 0; i < tf->count; i++) {
+        if (strcmp(tf->names[i], base) == 0) {
+            free(base);
+            return;
+        }
+    }
+    
+    char **new_names = realloc(tf->names, sizeof(char*) * (tf->count + 1));
+    if (new_names) {
+        tf->names = new_names;
+        tf->names[tf->count++] = base;
+    } else {
+        free(base);
+    }
+}
+
+static void print_revision(int *in_revision, int *first_print, const char *rev_num, const char *author, const char *date, char **msg_buf, size_t *msg_len) {
+    if (!*in_revision) return;
+    if (!*first_print) printf("\n");
+    *first_print = 0;
+    
+    if (isatty(STDOUT_FILENO)) {
+        printf("%srevision %s%s\n", ANSI_YELLOW, rev_num, ANSI_RESET);
+    } else {
+        printf("revision %s\n", rev_num);
+    }
+    printf("Author: %s\n", author);
+    printf("Date:   %s\n", date);
+    printf("\n");
+    
+    if (*msg_buf) {
+        LineList msg_ll = split_lines(*msg_buf);
+        for (int k = 0; k < msg_ll.count; k++) {
+            printf("    %.*s\n", (int)msg_ll.lines[k].length, msg_ll.lines[k].start);
+        }
+        free(msg_ll.lines);
+        free(*msg_buf);
+        *msg_buf = NULL;
+        *msg_len = 0;
+    }
+}
+
+static int is_revision(const char *s) {
+    if (!s || *s == '\0') return 0;
+    if (!(*s >= '0' && *s <= '9')) return 0;
+    while (*s) {
+        if (!((*s >= '0' && *s <= '9') || *s == '.')) return 0;
+        s++;
+    }
+    return 1;
+}
 
 /* Core helper to run commands and capture stdout/stderr safely (prevents shell injection) */
 int run_command(const char *const argv[], char **out_stdout, char **out_stderr) {
@@ -242,29 +303,6 @@ TrackedFiles find_tracked_files() {
     tf.names = NULL;
     tf.count = 0;
     
-    void add_file(const char *name) {
-        size_t len = strlen(name);
-        if (len <= 2 || strcmp(name + len - 2, ",v") != 0) return;
-        
-        char *base = strndup(name, len - 2);
-        
-        /* Check for duplicates */
-        for (int i = 0; i < tf.count; i++) {
-            if (strcmp(tf.names[i], base) == 0) {
-                free(base);
-                return;
-            }
-        }
-        
-        char **new_names = realloc(tf.names, sizeof(char*) * (tf.count + 1));
-        if (new_names) {
-            tf.names = new_names;
-            tf.names[tf.count++] = base;
-        } else {
-            free(base);
-        }
-    }
-    
     /* Read current directory */
     DIR *dir = opendir(".");
     if (dir) {
@@ -273,7 +311,7 @@ TrackedFiles find_tracked_files() {
             /* Note: We read all files; d_type check is omitted as some filesystems do not populate it */
             struct stat st;
             if (stat(entry->d_name, &st) == 0 && S_ISREG(st.st_mode)) {
-                add_file(entry->d_name);
+                add_file(&tf, entry->d_name);
             }
         }
         closedir(dir);
@@ -288,7 +326,7 @@ TrackedFiles find_tracked_files() {
             snprintf(path, sizeof(path), "RCS/%s", entry->d_name);
             struct stat st;
             if (stat(path, &st) == 0 && S_ISREG(st.st_mode)) {
-                add_file(entry->d_name);
+                add_file(&tf, entry->d_name);
             }
         }
         closedir(dir);
@@ -736,47 +774,20 @@ int cmd_log(const char *file_path) {
     char rev_num[64] = "";
     char author[128] = "";
     char date[128] = "";
-    
     char *msg_buf = NULL;
     size_t msg_len = 0;
     int first_print = 1;
-    
-    void print_revision() {
-        if (!in_revision) return;
-        if (!first_print) printf("\n");
-        first_print = 0;
-        
-        if (isatty(STDOUT_FILENO)) {
-            printf("%srevision %s%s\n", ANSI_YELLOW, rev_num, ANSI_RESET);
-        } else {
-            printf("revision %s\n", rev_num);
-        }
-        printf("Author: %s\n", author);
-        printf("Date:   %s\n", date);
-        printf("\n");
-        
-        if (msg_buf) {
-            LineList msg_ll = split_lines(msg_buf);
-            for (int k = 0; k < msg_ll.count; k++) {
-                printf("    %.*s\n", (int)msg_ll.lines[k].length, msg_ll.lines[k].start);
-            }
-            free(msg_ll.lines);
-            free(msg_buf);
-            msg_buf = NULL;
-            msg_len = 0;
-        }
-    }
     
     for (int i = 0; i < ll.count; i++) {
         LineView lv = ll.lines[i];
         
         if (lv.length >= 77 && strncmp(lv.start, "=============================================================================", 77) == 0) {
-            print_revision();
+            print_revision(&in_revision, &first_print, rev_num, author, date, &msg_buf, &msg_len);
             break;
         }
         
         if (lv.length >= 28 && strncmp(lv.start, "----------------------------", 28) == 0) {
-            print_revision();
+            print_revision(&in_revision, &first_print, rev_num, author, date, &msg_buf, &msg_len);
             
             in_revision = 1;
             rev_num[0] = '\0';
@@ -1291,16 +1302,6 @@ int main(int argc, char *argv[]) {
         }
         
         char *resolved_file = NULL;
-        
-        int is_revision(const char *s) {
-            if (!s || *s == '\0') return 0;
-            if (!(*s >= '0' && *s <= '9')) return 0;
-            while (*s) {
-                if (!((*s >= '0' && *s <= '9') || *s == '.')) return 0;
-                s++;
-            }
-            return 1;
-        }
         
         if (pos_count == 0) {
             resolved_file = resolve_file(NULL);
