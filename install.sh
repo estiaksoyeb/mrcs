@@ -31,7 +31,61 @@ case "$ARCH" in
         ;;
 esac
 
-# 3. Determine Installation Path
+# 3. Check and install RCS dependency if missing
+if ! command -v rcs >/dev/null 2>&1; then
+    echo "-----------------------------------------------"
+    echo " WARNING: Dependency 'rcs' is missing!"
+    echo "-----------------------------------------------"
+    echo "mrcs wraps GNU RCS and requires it to run."
+    echo ""
+    
+    # Check if we can read from terminal for auto-install
+    AUTO_INSTALLED=false
+    if [ -t 1 ] && [ -c /dev/tty ]; then
+        printf "Would you like to install 'rcs' automatically now? [y/N]: "
+        read -r ANSWER < /dev/tty
+        if [ "$ANSWER" = "y" ] || [ "$ANSWER" = "Y" ]; then
+            echo "Attempting to install 'rcs'..."
+            if [ "$OS_NAME" = "darwin" ]; then
+                brew install rcs
+                AUTO_INSTALLED=true
+            elif [ -n "$PREFIX" ]; then
+                pkg install -y rcs
+                AUTO_INSTALLED=true
+            elif command -v apt-get >/dev/null 2>&1; then
+                if [ "$(id -u)" -eq 0 ]; then
+                    apt-get update && apt-get install -y rcs
+                else
+                    sudo apt-get update && sudo apt-get install -y rcs
+                fi
+                AUTO_INSTALLED=true
+            elif command -v dnf >/dev/null 2>&1; then
+                if [ "$(id -u)" -eq 0 ]; then
+                    dnf install -y rcs
+                else
+                    sudo dnf install -y rcs
+                fi
+                AUTO_INSTALLED=true
+            fi
+        fi
+    fi
+    
+    if [ "$AUTO_INSTALLED" = false ]; then
+        echo "Please install 'rcs' using your package manager:"
+        if [ "$OS_NAME" = "darwin" ]; then
+            echo "  brew install rcs"
+        elif [ -n "$PREFIX" ]; then
+            echo "  pkg install rcs"
+        else
+            echo "  sudo apt install rcs  # Debian/Ubuntu"
+            echo "  sudo dnf install rcs  # Fedora/RHEL"
+        fi
+        echo "-----------------------------------------------"
+        echo ""
+    fi
+fi
+
+# 4. Determine Installation Path
 # Termux check: Android/Termux environments have $PREFIX set
 if [ -n "$PREFIX" ] && [ -d "$PREFIX/bin" ]; then
     INSTALL_DIR="$PREFIX/bin"
@@ -110,23 +164,9 @@ if [ -n "$COMPLETION_DIR" ]; then
     fi
 fi
 
-# 7. Verify RCS dependency is installed
-if ! command -v rcs >/dev/null 2>&1; then
-    echo ""
-    echo "==============================================="
-    echo " WARNING: Dependency 'rcs' is missing!"
-    echo "==============================================="
-    echo "mrcs wraps GNU RCS and requires it to run."
-    echo "Please install it using your package manager:"
-    if [ "$OS_NAME" = "darwin" ]; then
-        echo "  brew install rcs"
-    elif [ -n "$PREFIX" ]; then
-        echo "  pkg install rcs"
-    else
-        echo "  sudo apt install rcs  # Debian/Ubuntu"
-        echo "  sudo dnf install rcs  # Fedora/RHEL"
-    fi
-    echo "==============================================="
-else
+# 7. Final Verification
+if command -v rcs >/dev/null 2>&1; then
     echo "Success! mrcs is installed and ready to use."
+else
+    echo "mrcs is installed, but requires 'rcs' to be installed before you can run it."
 fi
