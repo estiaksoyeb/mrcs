@@ -48,3 +48,18 @@ To wrap utilities like `ci -u -m"message" file`, developers often use `system()`
 
 ### The Workaround
 We avoided `system()` entirely. All commands are executed via a custom `run_command` helper using POSIX `fork()` and `execvp()`. Arguments are passed as an array of pointers directly to the OS kernel, bypassing the shell processor and completely neutralizing command injection vectors.
+
+---
+
+## 4. Termux/Android Dynamic Linker Issue ("required file not found")
+
+### The Issue
+When trying to run the pre-compiled Linux ARM64 binary (`mrcs-linux-arm64`) directly on a native Termux terminal, the shell fails to execute with the error:
+`bash: /data/data/com.termux/files/usr/bin/mrcs: cannot execute: required file not found`
+
+### The Root Cause
+GitHub Actions Ubuntu runners cross-compile for ARM64 using standard `gcc-aarch64-linux-gnu`. This compiler dynamically links the binary against the standard GNU C Library (`glibc`) dynamic linker (usually `/lib/ld-linux-aarch64.so.1`).
+However, Android/Termux does not use `glibc`; it runs on **Bionic libc**, and its dynamic linker is located elsewhere (e.g. `/system/bin/linker64`). Because the kernel cannot find the required `glibc` dynamic linker on Android, it aborts execution with a misleading "file not found" message.
+
+### The Workaround
+We updated the release workflow in [.github/workflows/release.yml](file:///root/Projects/mrcs/.github/workflows/release.yml) to compile all Linux binaries with the **`-static`** flag. This packages all libc dependencies statically inside the binary, eliminating any runtime dynamic linker dependencies. The static binary runs out of the box on standard Linux distros (Ubuntu, Alpine) as well as native Android/Termux environments.
