@@ -12,7 +12,13 @@ echo "==============================================="
 # 1. Detect OS
 OS=$(uname -s | tr '[:upper:]' '[:lower:]')
 case "$OS" in
-    linux)  OS_NAME="linux" ;;
+    linux)
+        if [ -n "$PREFIX" ]; then
+            OS_NAME="android"
+        else
+            OS_NAME="linux"
+        fi
+        ;;
     darwin) OS_NAME="darwin" ;;
     *)
         echo "Error: Unsupported OS '$OS'" >&2
@@ -108,25 +114,109 @@ else
     fi
 fi
 
+# Helper to compile from source if download fails or is incompatible
+compile_from_source() {
+    echo "-----------------------------------------------"
+    echo " Compiling mrcs from source code..."
+    echo "-----------------------------------------------"
+    SRC_URL="https://raw.githubusercontent.com/${REPO}/main/mrcs.c"
+    TEMP_SRC=$(mktemp).c
+    
+    echo "Downloading source code mrcs.c..."
+    if command -v curl >/dev/null 2>&1; then
+        curl -fsSL -o "$TEMP_SRC" "$SRC_URL"
+    elif command -v wget >/dev/null 2>&1; then
+        wget -qO "$TEMP_SRC" "$SRC_URL"
+    else
+        echo "Error: Neither 'curl' nor 'wget' found. Cannot download source." >&2
+        rm -f "$TEMP_SRC"
+        return 1
+    fi
+    
+    # Detect compiler
+    COMPILER=""
+    if command -v clang >/dev/null 2>&1; then
+        COMPILER="clang"
+    elif command -v gcc >/dev/null 2>&1; then
+        COMPILER="gcc"
+    elif [ -n "$PREFIX" ]; then
+        # On Termux, attempt to install clang automatically
+        if [ -t 1 ] && [ -c /dev/tty ]; then
+            printf "No C compiler found. Would you like to install 'clang' automatically now? [y/N]: "
+            read -r ANSWER < /dev/tty
+            if [ "$ANSWER" = "y" ] || [ "$ANSWER" = "Y" ]; then
+                echo "Installing clang..."
+                pkg install -y clang
+                if command -v clang >/dev/null 2>&1; then
+                    COMPILER="clang"
+                fi
+            fi
+        fi
+    fi
+    
+    if [ -z "$COMPILER" ]; then
+        echo "Error: No C compiler (clang or gcc) found." >&2
+        echo "Please install a compiler (e.g. 'pkg install clang' or 'apt install gcc') and run this installer again." >&2
+        rm -f "$TEMP_SRC"
+        return 1
+    fi
+    
+    echo "Compiling using ${COMPILER}..."
+    if ${COMPILER} -Wall -Wextra -O2 -std=c99 -D_GNU_SOURCE -o "$TEMP_FILE" "$TEMP_SRC"; then
+        echo "Compilation successful!"
+        rm -f "$TEMP_SRC"
+        return 0
+    else
+        echo "Error: Compilation failed." >&2
+        rm -f "$TEMP_SRC"
+        return 1
+    fi
+}
+
 # 4. Perform Download
 ASSET_NAME="mrcs-${OS_NAME}-${ARCH_NAME}"
 DOWNLOAD_URL="https://github.com/${REPO}/releases/latest/download/${ASSET_NAME}"
 TEMP_FILE=$(mktemp)
 
+DOWNLOAD_SUCCESS=false
 echo "Downloading ${ASSET_NAME} from GitHub Releases..."
 if command -v curl >/dev/null 2>&1; then
-    curl -fsSL -o "$TEMP_FILE" "$DOWNLOAD_URL"
+    if curl -fsSL -o "$TEMP_FILE" "$DOWNLOAD_URL"; then
+        DOWNLOAD_SUCCESS=true
+    fi
 elif command -v wget >/dev/null 2>&1; then
-    wget -qO "$TEMP_FILE" "$DOWNLOAD_URL"
-else
-    echo "Error: Neither 'curl' nor 'wget' was found. Please install one of them." >&2
-    rm -f "$TEMP_FILE"
-    exit 1
+    if wget -qO "$TEMP_FILE" "$DOWNLOAD_URL"; then
+        DOWNLOAD_SUCCESS=true
+    fi
 fi
 
-# 5. Move binary to installation path
+# 5. Verify the downloaded binary works, fallback to source if it fails
+CHMOD_SUCCESS=false
+if [ "$DOWNLOAD_SUCCESS" = true ]; then
+    chmod +x "$TEMP_FILE"
+    CHMOD_SUCCESS=true
+    
+    # Test execution
+    if ! "$TEMP_FILE" help >/dev/null 2>&1; then
+        echo "Warning: Downloaded binary did not execute properly (possible seccomp filter/linking issue)."
+        DOWNLOAD_SUCCESS=false
+    fi
+fi
+
+if [ "$DOWNLOAD_SUCCESS" = false ]; then
+    if compile_from_source; then
+        if [ "$CHMOD_SUCCESS" = false ]; then
+            chmod +x "$TEMP_FILE"
+        fi
+    else
+        echo "Error: Failed to obtain a functional mrcs binary." >&2
+        rm -f "$TEMP_FILE"
+        exit 1
+    fi
+fi
+
+# 6. Move binary to installation path
 echo "Installing to ${INSTALL_DIR}/mrcs..."
-chmod +x "$TEMP_FILE"
 if [ "$USE_SUDO" = true ]; then
     sudo mv "$TEMP_FILE" "${INSTALL_DIR}/mrcs"
 else

@@ -30,6 +30,16 @@ jobs:
             target: darwin-arm64
             cc: clang
             flags: -target arm64-apple-macos
+          - os: ubuntu-latest
+            target: android-arm64
+            cc: clang
+            flags: --target=aarch64-linux-android24
+            ndk: true
+          - os: ubuntu-latest
+            target: android-amd64
+            cc: clang
+            flags: --target=x86_64-linux-android24
+            ndk: true
 
     steps:
       - name: Checkout repository
@@ -39,9 +49,17 @@ jobs:
         if: matrix.install_cc
         run: ${{ matrix.install_cc }}
 
+      - name: Setup Android NDK
+        if: matrix.ndk
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r25c
+
       - name: Build binary
         run: |
-          if [[ "${{ matrix.target }}" == linux-* ]]; then
+          if [ "${{ matrix.ndk }}" = "true" ]; then
+            $ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/${{ matrix.cc }} -Wall -Wextra -O2 -std=c99 -D_GNU_SOURCE ${{ matrix.flags }} -o mrcs-${{ matrix.target }} mrcs.c
+          elif [[ "${{ matrix.target }}" == linux-* ]]; then
             ${{ matrix.cc }} -Wall -Wextra -O2 -std=c99 -D_GNU_SOURCE ${{ matrix.flags }} -static -o mrcs-${{ matrix.target }} mrcs.c
           else
             ${{ matrix.cc }} -Wall -Wextra -O2 -std=c99 -D_GNU_SOURCE ${{ matrix.flags }} -o mrcs-${{ matrix.target }} mrcs.c
