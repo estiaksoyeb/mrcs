@@ -6,6 +6,16 @@
 
 ---
 
+## Why `mrcs`?
+
+While Git is the industry standard for project-level version control, it is often overkill—or even risky—for tracking individual files. `mrcs` acts as a **secondary, local-only file-tracking system** that solves these specific problems:
+
+- **Prevent Secret Leaks (No Accidental Pushes):** If you are tracking local scratchpads, drafts, configuration overrides, or files containing private keys, keeping them under Git runs the risk of accidentally staging and pushing them to a public remote repository. `mrcs` operates **entirely locally**—there is no `push` command and no remote connection, so your files are guaranteed to stay on your machine.
+- **Micro-Versioning Without Commit Noise:** You can keep your main Git history clean by only committing meaningful, project-wide changes. In parallel, you can use `mrcs` to track every single minor edit, auto-save, or experimental rewrite on a single configuration or document file.
+- **No Repository Overhead:** Git requires creating a repository, managing `.gitignore` files, and staging files before tracking them. `mrcs` lets you version control any single file instantly in any directory: `mrcs init file.txt` and you're good to go.
+
+---
+
 ## Features
 
 - **Zero-Friction Tracking**: Easily track individual files (e.g., `TODO.md`, `changelog.md`, `config.json`).
