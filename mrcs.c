@@ -451,6 +451,23 @@ char *get_current_rev(const char *file_path) {
     return current;
 }
 
+/* Helper to check if a file contains binary data */
+static int is_binary_file(const char *file_path) {
+    FILE *f = fopen(file_path, "rb");
+    if (!f) return 0;
+    
+    char buf[1024];
+    size_t n = fread(buf, 1, sizeof(buf), f);
+    fclose(f);
+    
+    for (size_t i = 0; i < n; i++) {
+        if (buf[i] == '\0') {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 /* Command: init */
 int cmd_init(const char *file_path) {
     char *path_copy = strdup(file_path);
@@ -522,6 +539,14 @@ int cmd_init(const char *file_path) {
         return 1;
     }
     free(stderr_str);
+    
+    /* Configure as binary if target file has binary content */
+    if (is_binary_file(file_path)) {
+        const char *argv_kb[] = {"rcs", "-kb", file_path, NULL};
+        char *stderr_kb = NULL;
+        run_command(argv_kb, NULL, &stderr_kb);
+        free(stderr_kb);
+    }
     
     finalize_transaction(file_path);
     
@@ -705,6 +730,14 @@ int cmd_commit(const char *file_path, const char *message_arg) {
     if (asprintf(&msg_flag, "-m%s", message) == -1) {
         free(message);
         return 1;
+    }
+    
+    /* Ensure binary files are tracked correctly with -kb configuration */
+    if (is_binary_file(file_path)) {
+        const char *argv_kb[] = {"rcs", "-kb", file_path, NULL};
+        char *stderr_kb = NULL;
+        run_command(argv_kb, NULL, &stderr_kb);
+        free(stderr_kb);
     }
     
     const char *argv_ci[] = {"ci", "-u", msg_flag, file_path, NULL};

@@ -24,6 +24,7 @@ While Git is the industry standard for project-level version control, it is ofte
 - **Unified Colorized Diffs**: Modern, readable, and colored diff output.
 - **Android/Termux Friendly**: Built-in workaround (`finalize_transaction`) for Termux/Android shared storage filesystem limitations.
 - **No Terminology Confusion**: Hides ancient Unix RCS terms like `check-in` (`ci`) and `check-out` (`co`).
+- **Binary File Support**: Automatically detects binary files using a NUL-byte scanner and configures RCS binary mode (`-kb`) to preserve raw bytes and disable keyword expansion.
 
 ---
 

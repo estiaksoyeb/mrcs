@@ -143,6 +143,34 @@ if [ "$current_rev" != "1.1" ]; then
     exit 1
 fi
 
+# 14. Test binary file tracking (no keyword expansions, exact bytes preserved)
+echo "Testing binary file tracking..."
+# Create a binary file containing NUL bytes and keywords like $Id$
+printf "BinaryData\0\$Id\$\0MoreData" > test_binary.bin
+$MRCS init test_binary.bin
+$MRCS commit test_binary.bin -m "Commit binary file"
+
+# Check status
+status_out=$($MRCS status test_binary.bin)
+if [[ ! "$status_out" =~ "clean" ]]; then
+    echo "FAILED: Expected status 'clean' for binary file, got '$status_out'"
+    exit 1
+fi
+
+# Modify binary file
+printf "BinaryData\0\$Id\$\0ModifiedData" > test_binary.bin
+$MRCS commit test_binary.bin -m "Modify binary file"
+
+# Restore to 1.1 and check if NUL bytes and exact keywords are preserved (no expansion of $Id$)
+$MRCS restore 1.1 test_binary.bin
+printf "BinaryData\0\$Id\$\0MoreData" > expected_binary.bin
+if ! cmp -s test_binary.bin expected_binary.bin; then
+    echo "FAILED: Binary content or keyword expansion check failed for restored 1.1"
+    rm -f expected_binary.bin
+    exit 1
+fi
+rm -f expected_binary.bin
+
 # Cleanup sandbox
 cd ..
 rm -rf "$TEST_DIR"
