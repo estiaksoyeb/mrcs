@@ -31,6 +31,9 @@ typedef struct {
 } LineList;
 
 LineList split_lines(const char *buf);
+int run_command_bytes(const char *const argv[], char **out_stdout, size_t *out_stdout_len, char **out_stderr);
+int get_status_code(const char *file_path);
+char *checkout_to_temp_file(const char *file_path, const char *rev);
 
 typedef struct {
     char **names;
@@ -97,7 +100,7 @@ static int is_revision(const char *s) {
 }
 
 /* Core helper to run commands and capture stdout/stderr safely (prevents shell injection) */
-int run_command(const char *const argv[], char **out_stdout, char **out_stderr) {
+int run_command_bytes(const char *const argv[], char **out_stdout, size_t *out_stdout_len, char **out_stderr) {
     int pipe_out[2];
     int pipe_err[2];
     
@@ -179,6 +182,7 @@ int run_command(const char *const argv[], char **out_stdout, char **out_stderr) 
         
         if (out_stdout) *out_stdout = stdout_buf ? stdout_buf : strdup("");
         else free(stdout_buf);
+        if (out_stdout_len) *out_stdout_len = stdout_size;
         
         if (out_stderr) *out_stderr = stderr_buf ? stderr_buf : strdup("");
         else free(stderr_buf);
@@ -188,6 +192,11 @@ int run_command(const char *const argv[], char **out_stdout, char **out_stderr) 
         }
         return -1;
     }
+}
+
+int run_command(const char *const argv[], char **out_stdout, char **out_stderr) {
+    size_t len = 0;
+    return run_command_bytes(argv, out_stdout, &len, out_stderr);
 }
 
 /* Helper to split a buffer into LineViews without modifying the buffer */
@@ -700,13 +709,8 @@ int cmd_commit(const char *file_path, const char *message_arg) {
     
     /* Prevent commits with no changes if revisions already exist */
     if (has_revisions(file_path)) {
-        const char *argv_diff[] = {"rcsdiff", file_path, NULL};
-        char *stdout_str = NULL;
-        char *stderr_str = NULL;
-        int code = run_command(argv_diff, &stdout_str, &stderr_str);
-        free(stdout_str);
-        free(stderr_str);
-        if (code == 0) {
+        int status_code = get_status_code(file_path);
+        if (status_code == 2) { /* clean */
             printf("No changes detected. Nothing to commit.\n");
             return 0;
         }
@@ -896,66 +900,105 @@ int cmd_diff(const char *file_path, const char *rev1, const char *rev2) {
         fprintf(stderr, "%sError: File '%s' is not tracked.%s\n", ANSI_RED, file_path, ANSI_RESET);
         return 1;
     }
+    if (!has_revisions(file_path)) {
+        fprintf(stderr, "%sError: No revisions present in the repository yet.%s\n", ANSI_RED, ANSI_RESET);
+        return 1;
+    }
     
-    int arg_count = 0;
-    const char *argv[10];
-    argv[arg_count++] = "rcsdiff";
-    argv[arg_count++] = "-u";
-    
-    char *r1 = NULL;
-    char *r2 = NULL;
-    
+    char *resolved_rev1 = NULL;
     if (rev1) {
-        if (asprintf(&r1, "-r%s", rev1) == -1) {
+        resolved_rev1 = strdup(rev1);
+    } else {
+        resolved_rev1 = get_current_rev(file_path);
+        if (!resolved_rev1) {
+            fprintf(stderr, "%sError: Failed to retrieve current revision.%s\n", ANSI_RED, ANSI_RESET);
             return 1;
         }
-        argv[arg_count++] = r1;
     }
-    if (rev2) {
-        if (asprintf(&r2, "-r%s", rev2) == -1) {
-            free(r1);
-            return 1;
-        }
-        argv[arg_count++] = r2;
-    }
-    argv[arg_count++] = file_path;
-    argv[arg_count] = NULL;
     
+    char *temp1 = checkout_to_temp_file(file_path, resolved_rev1);
+    if (!temp1) {
+        fprintf(stderr, "%sError: Failed to checkout revision %s.%s\n", ANSI_RED, resolved_rev1, ANSI_RESET);
+        free(resolved_rev1);
+        return 1;
+    }
+    
+    char *temp2 = NULL;
+    const char *target = file_path;
+    if (rev2) {
+        temp2 = checkout_to_temp_file(file_path, rev2);
+        if (!temp2) {
+            fprintf(stderr, "%sError: Failed to checkout revision %s.%s\n", ANSI_RED, rev2, ANSI_RESET);
+            unlink(temp1);
+            free(temp1);
+            free(resolved_rev1);
+            return 1;
+        }
+        target = temp2;
+    }
+    
+    /* Run: diff -u temp1 target */
+    const char *argv[] = {"diff", "-u", temp1, target, NULL};
     char *stdout_str = NULL;
     char *stderr_str = NULL;
     int code = run_command(argv, &stdout_str, &stderr_str);
     
-    free(r1);
-    free(r2);
+    unlink(temp1);
+    free(temp1);
+    if (temp2) {
+        unlink(temp2);
+        free(temp2);
+    }
     
-    if (code == 2) {
-        if (stderr_str && (strstr(stderr_str, "no revisions present") || strstr(stdout_str, "no revisions present"))) {
-            fprintf(stderr, "%sError: No revisions present in the repository yet.%s\n", ANSI_RED, ANSI_RESET);
-        } else {
-            fprintf(stderr, "%srcsdiff failed: %s%s\n", ANSI_RED, stderr_str ? stderr_str : "", ANSI_RESET);
-        }
+    if (code >= 2) {
+        fprintf(stderr, "%sdiff failed: %s%s\n", ANSI_RED, stderr_str ? stderr_str : "", ANSI_RESET);
         free(stdout_str);
         free(stderr_str);
+        free(resolved_rev1);
         return 1;
     }
     free(stderr_str);
     
+    /* Print the diff header info (reproduce GNU rcsdiff headers for compatibility) */
     if (stdout_str && strlen(stdout_str) > 0) {
-        LineList ll = split_lines(stdout_str);
         int tty = isatty(STDOUT_FILENO);
+        if (tty) {
+            printf("%s===================================================================%s\n", ANSI_BLUE, ANSI_RESET);
+            printf("%sRCS file: RCS/%s,v%s\n", ANSI_BLUE, file_path, ANSI_RESET);
+            printf("%sretrieving revision %s%s\n", ANSI_BLUE, resolved_rev1, ANSI_RESET);
+            if (rev2) {
+                printf("%sretrieving revision %s%s\n", ANSI_BLUE, rev2, ANSI_RESET);
+                printf("%sdiff -r%s -r%s %s%s\n", ANSI_BLUE, resolved_rev1, rev2, file_path, ANSI_RESET);
+            } else {
+                printf("%sdiff -r%s %s%s\n", ANSI_BLUE, resolved_rev1, file_path, ANSI_RESET);
+            }
+        } else {
+            printf("===================================================================\n");
+            printf("RCS file: RCS/%s,v\n", file_path);
+            printf("retrieving revision %s\n", resolved_rev1);
+            if (rev2) {
+                printf("retrieving revision %s\n", rev2);
+                printf("diff -r%s -r%s %s\n", resolved_rev1, rev2, file_path);
+            } else {
+                printf("diff -r%s %s\n", resolved_rev1, file_path);
+            }
+        }
         
+        LineList ll = split_lines(stdout_str);
         for (int i = 0; i < ll.count; i++) {
             LineView lv = ll.lines[i];
-            if (lv.length >= 3 && strncmp(lv.start, "---", 3) == 0) {
-                if (lv.length >= 4 && lv.start[3] == ' ') {
-                    if (tty) printf("%s%.*s%s\n", ANSI_RED, (int)lv.length, lv.start, ANSI_RESET);
-                    else printf("%.*s\n", (int)lv.length, lv.start);
+            /* Skip standard diff header lines so we replace them with our pretty RCSdiff header */
+            if (lv.length >= 4 && strncmp(lv.start, "--- ", 4) == 0) {
+                if (tty) printf("%s--- %s (revision %s)%s\n", ANSI_RED, file_path, resolved_rev1, ANSI_RESET);
+                else printf("--- %s (revision %s)\n", file_path, resolved_rev1);
+            } else if (lv.length >= 4 && strncmp(lv.start, "+++ ", 4) == 0) {
+                if (rev2) {
+                    if (tty) printf("%s+++ %s (revision %s)%s\n", ANSI_GREEN, file_path, rev2, ANSI_RESET);
+                    else printf("+++ %s (revision %s)\n", file_path, rev2);
                 } else {
-                    printf("%.*s\n", (int)lv.length, lv.start);
+                    if (tty) printf("%s+++ %s (working copy)%s\n", ANSI_GREEN, file_path, ANSI_RESET);
+                    else printf("+++ %s (working copy)\n", file_path);
                 }
-            } else if (lv.length >= 3 && strncmp(lv.start, "+++", 3) == 0) {
-                if (tty) printf("%s%.*s%s\n", ANSI_GREEN, (int)lv.length, lv.start, ANSI_RESET);
-                else printf("%.*s\n", (int)lv.length, lv.start);
             } else if (lv.length >= 1 && lv.start[0] == '-') {
                 if (tty) printf("%s%.*s%s\n", ANSI_RED, (int)lv.length, lv.start, ANSI_RESET);
                 else printf("%.*s\n", (int)lv.length, lv.start);
@@ -965,9 +1008,6 @@ int cmd_diff(const char *file_path, const char *rev1, const char *rev2) {
             } else if (lv.length >= 2 && strncmp(lv.start, "@@", 2) == 0) {
                 if (tty) printf("%s%.*s%s\n", ANSI_CYAN, (int)lv.length, lv.start, ANSI_RESET);
                 else printf("%.*s\n", (int)lv.length, lv.start);
-            } else if (lv.length >= 3 && (strncmp(lv.start, "===", 3) == 0 || strncmp(lv.start, "RCS file:", 9) == 0 || strncmp(lv.start, "retrieving", 10) == 0 || strncmp(lv.start, "diff ", 5) == 0)) {
-                if (tty) printf("%s%.*s%s\n", ANSI_BLUE, (int)lv.length, lv.start, ANSI_RESET);
-                else printf("%.*s\n", (int)lv.length, lv.start);
             } else {
                 printf("%.*s\n", (int)lv.length, lv.start);
             }
@@ -976,6 +1016,7 @@ int cmd_diff(const char *file_path, const char *rev1, const char *rev2) {
     }
     
     free(stdout_str);
+    free(resolved_rev1);
     return 0;
 }
 
@@ -1026,17 +1067,83 @@ int cmd_current(const char *file_path) {
     }
 }
 
+/* Helper to check out a specific revision to a temporary file */
+char *checkout_to_temp_file(const char *file_path, const char *rev) {
+    const char *tmpdir = getenv("TMPDIR");
+    if (!tmpdir) tmpdir = "/tmp";
+    
+    char temp_path[BUFFER_SIZE];
+    snprintf(temp_path, sizeof(temp_path), "%s/mrcs_diff_XXXXXX", tmpdir);
+    int fd = mkstemp(temp_path);
+    if (fd == -1) {
+        snprintf(temp_path, sizeof(temp_path), "./.mrcs_diff_XXXXXX");
+        fd = mkstemp(temp_path);
+        if (fd == -1) {
+            perror("mkstemp");
+            return NULL;
+        }
+    }
+    close(fd);
+    
+    char *rev_flag = NULL;
+    if (asprintf(&rev_flag, "-r%s", rev) == -1) {
+        unlink(temp_path);
+        return NULL;
+    }
+    
+    /* Run: co -p -q -rREV file_path > temp_path */
+    const char *argv[] = {"co", "-p", "-q", rev_flag, file_path, NULL};
+    char *stdout_str = NULL;
+    char *stderr_str = NULL;
+    size_t stdout_len = 0;
+    int code = run_command_bytes(argv, &stdout_str, &stdout_len, &stderr_str);
+    free(rev_flag);
+    
+    if (code != 0) {
+        free(stdout_str);
+        free(stderr_str);
+        unlink(temp_path);
+        return NULL;
+    }
+    free(stderr_str);
+    
+    FILE *fp = fopen(temp_path, "wb");
+    if (!fp) {
+        free(stdout_str);
+        unlink(temp_path);
+        return NULL;
+    }
+    if (stdout_str) {
+        fwrite(stdout_str, 1, stdout_len, fp);
+        free(stdout_str);
+    }
+    fclose(fp);
+    
+    return strdup(temp_path);
+}
+
 /* Retrieve state of tracked file */
 int get_status_code(const char *file_path) {
     if (!is_tracked(file_path)) return 0;     /* untracked */
     if (!has_revisions(file_path)) return 1;  /* uncommitted */
     
-    const char *argv[] = {"rcsdiff", file_path, NULL};
+    char *current_rev = get_current_rev(file_path);
+    if (!current_rev) return 4; /* error */
+    
+    char *temp_file = checkout_to_temp_file(file_path, current_rev);
+    free(current_rev);
+    if (!temp_file) return 4; /* error */
+    
+    /* Run: diff -q temp_file file_path */
+    const char *argv[] = {"diff", "-q", temp_file, file_path, NULL};
     char *stdout_str = NULL;
     char *stderr_str = NULL;
     int code = run_command(argv, &stdout_str, &stderr_str);
     free(stdout_str);
     free(stderr_str);
+    
+    unlink(temp_file);
+    free(temp_file);
     
     if (code == 0) return 2; /* clean */
     if (code == 1) return 3; /* modified */
